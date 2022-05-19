@@ -2,7 +2,8 @@
 
 use std::f32::consts::PI;
 
-use ggez::event::{self, EventHandler};
+use ggez::conf::{WindowSetup, WindowMode};
+use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::graphics::{self, Color};
 use ggez::{Context, ContextBuilder, GameResult};
 use glam::*;
@@ -11,10 +12,15 @@ use pendulum::DoublePendulum;
 mod pendulum;
 
 const PHI: f32 = PI * 2.0;
+const WIDTH: f32 = 2048.0;
 
 fn main() {
     // Make a Context.
+    let mut window_mode = WindowMode::default();
+    window_mode.width = WIDTH;
+    window_mode.height = WIDTH;
     let (mut ctx, event_loop) = ContextBuilder::new("my_game", "Cool Game Author")
+        .window_mode(window_mode)
         .build()
         .expect("aieee, could not create ggez context!");
 
@@ -28,38 +34,54 @@ fn main() {
 }
 
 struct MyGame {
-    // Your state here...
-    p: DoublePendulum,
+    ps: Vec<DoublePendulum>, // running
+    st: Vec<DoublePendulum>, // stopped
 }
 
 impl MyGame {
     pub fn new(_ctx: &mut Context) -> MyGame {
-        // Load/create resources such as images here.
         MyGame {
-            p: DoublePendulum {
-                p:      vec2(100.0, 100.0),
-                theta1: PHI / 8.0,
-                theta2: PHI / 4.0,
-                l1:     100.0,
-                l2:     150.0,
-                dt1:    0.0,
-                dt2:    0.0,
-                d2t1: 0.0,
-                d2t2: 0.0,
-            },
+            ps: vec![
+                DoublePendulum::new2(vec2(WIDTH/2.0, WIDTH/2.0), WIDTH, 1.0),
+            ],
+            st: vec![],
         }
     }
 }
 
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        self.p.update(ctx)?;
+        let mut p1 = Vec::new();
+        for p in &mut self.ps {
+            p.update(ctx)?;
+            if p.stopped {
+                self.st.push(p.clone());
+                p1.extend(p.split(WIDTH));
+                println!("{:?} {:?}", p, p1);
+            }
+            else {
+                p1.push(p.clone())
+            }
+        }
+        self.ps = p1;
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, Color::WHITE);
-        self.p.draw(ctx)?;
+        for p in &self.st {
+            p.draw(ctx)?
+        }
+        for p in &mut self.ps {
+            p.draw(ctx)?
+        }
         graphics::present(ctx)
+    }
+
+    fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
+        match keycode {
+            KeyCode::Q => event::quit(ctx),
+            _ => {}
+        }
     }
 }
