@@ -1,13 +1,16 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_mut, unused_variables, unreachable_code))]
 
+#[macro_use]
+extern crate lazy_static;
+
 use std::f32::consts::PI;
 
-use ggez::conf::{WindowSetup, WindowMode};
+use ggez::conf::{WindowMode, WindowSetup};
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
-use ggez::graphics::{self, Color};
+use ggez::graphics::{self, Color, Font};
 use ggez::{Context, ContextBuilder, GameResult};
 use glam::*;
-use pendulum::DoublePendulum;
+use pendulum::{DoublePendulum, PendulumFamily};
 
 mod pendulum;
 
@@ -33,55 +36,88 @@ fn main() {
     event::run(ctx, event_loop, my_game);
 }
 
+#[derive(PartialEq)]
+enum GameState {
+    PAUSE,
+    RUN,
+    DONE,
+}
+
+struct TextHint {
+    font: Font,
+    text: Option<String>,
+}
+
+impl TextHint {
+    fn new(ctx: &mut Context) -> GameResult<Self> {
+        Ok(TextHint {
+            font: Font::new(ctx, "")?,
+            text: None,
+        })
+    }
+}
+
 struct MyGame {
-    ps: Vec<DoublePendulum>, // running
-    st: Vec<DoublePendulum>, // stopped
+    // ps:    Vec<DoublePendulum>, // running
+    // st:    Vec<DoublePendulum>, // stopped
+    pendulums: PendulumFamily,
+    state: GameState,
+    hint: TextHint,
 }
 
 impl MyGame {
-    pub fn new(_ctx: &mut Context) -> MyGame {
-        MyGame {
-            ps: vec![
-                DoublePendulum::new2(vec2(WIDTH/2.0, WIDTH/2.0), WIDTH, 1.0),
-            ],
-            st: vec![],
-        }
+    pub fn new(ctx: &mut Context) -> MyGame {
+        let mut this = MyGame {
+            pendulums: PendulumFamily::new(),
+            state: GameState::PAUSE,
+            hint: TextHint::new(ctx).unwrap(),
+        };
+        this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 2.0, WIDTH / 2.0), WIDTH, 1.0));
+        this
     }
 }
 
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let mut p1 = Vec::new();
-        for p in &mut self.ps {
-            p.update(ctx)?;
-            if p.stopped {
-                self.st.push(p.clone());
-                p1.extend(p.split(WIDTH));
-                println!("{:?} {:?}", p, p1);
-            }
-            else {
-                p1.push(p.clone())
-            }
+        if self.state == GameState::PAUSE {
+            return Ok(())
         }
-        self.ps = p1;
+        self.pendulums.update(ctx, WIDTH)?;
+        if self.pendulums.len() == 0 && self.state == GameState::RUN {
+            self.state = GameState::PAUSE;
+        }
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, Color::WHITE);
-        for p in &self.st {
-            p.draw(ctx)?
-        }
-        for p in &mut self.ps {
-            p.draw(ctx)?
-        }
+        self.pendulums.draw(ctx)?;
         graphics::present(ctx)
     }
 
     fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
         match keycode {
-            KeyCode::Q => event::quit(ctx),
+            KeyCode::Q => {
+                // let mut steps = self.st.iter().map(|p| p.steps).collect::<Vec<_>>();
+                // steps.sort();
+                // println!("{:?}", steps);
+                event::quit(ctx);
+            },
+            KeyCode::Space => {
+                if self.state == GameState::RUN {
+                    self.state = GameState::PAUSE;
+                }
+                else if self.state == GameState::PAUSE {
+                    self.state = GameState::RUN;
+                }
+            }
             _ => {}
+        }
+    }
+    
+    fn mouse_motion_event(&mut self, _ctx: &mut Context, x: f32, y: f32, _dx: f32, _dy: f32) {
+        if let Some(p) = self.pendulums.find(x, y) {
+
         }
     }
 }

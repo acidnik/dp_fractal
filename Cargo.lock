@@ -707,6 +707,7 @@ version = "0.1.0"
 dependencies = [
  "ggez",
  "glam",
+ "lazy_static",
 ]
 
 [[package]]
