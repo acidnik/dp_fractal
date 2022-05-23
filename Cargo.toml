@@ -6,6 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+angular-units = "0.2.4"
 ggez = "0.7"
 glam = "0.20.5"
+kiddo = "0.2.4"
 lazy_static = "1.4.0"
+prisma = "0.1.1"

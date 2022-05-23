@@ -72,6 +72,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "000444226fcff248f2bc4c7625be32c63caccfecc2723a2b9f78a7487a49c407"
 
 [[package]]
+name = "angular-units"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f1c36cde4b75aa8518ad38880fdc7b649d7bf22b359a296964756e2319d598d"
+dependencies = [
+ "approx 0.3.2",
+ "num-traits",
+]
+
+[[package]]
+name = "approx"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0e60b75072ecd4168020818c0107f2857bb6c4e64252d8d3983f6263b40a5c3"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -705,9 +724,12 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 name = "dpfrac"
 version = "0.1.0"
 dependencies = [
+ "angular-units",
  "ggez",
  "glam",
+ "kiddo",
  "lazy_static",
+ "prisma",
 ]
 
 [[package]]
@@ -841,7 +863,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2481c5fcf83c5d51172850a3ee2ae36d86f9961d39851c6bec99108f87f085d"
 dependencies = [
- "approx",
+ "approx 0.5.1",
  "bitflags",
  "bytemuck",
  "directories",
@@ -1042,7 +1064,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc32c2334f00ca5ac3695c5009ae35da21da8c62d255b5b96d56e2597a637a38"
 dependencies = [
  "ab_glyph",
- "approx",
+ "approx 0.5.1",
  "xi-unicode",
 ]
 
@@ -1158,6 +1180,15 @@ name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
+
+[[package]]
+name = "kiddo"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc0a5c92307668140bf7d63a03a23e2da0b0453801fd54888c903cb7f723c293"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "lazy_static"
@@ -1823,6 +1854,17 @@ name = "ppv-lite86"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb9f9e6e233e5c4a35559a617bf40a4ec447db2e84c20b55a6f83167b7e57872"
+
+[[package]]
+name = "prisma"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5640533116b656900156ef15e22d3789edb9a71f36ec04a2678a307be243495"
+dependencies = [
+ "angular-units",
+ "approx 0.3.2",
+ "num-traits",
+]
 
 [[package]]
 name = "proc-macro-crate"
