@@ -16,19 +16,21 @@ use prisma::Lerp;
 const G: f32 = 9.81;
 const PHI: f32 = 2.0 * PI;
 const L1: f32 = 80.0;
-const MIN_PIXEL: f32 = 32.0;
-const MIN_DIVE_PIXEL: f32 = 8.0;
+const MIN_PIXEL: f32 = 16.0;
+const MIN_DIVE_PIXEL: f32 = 4.0;
+// const UPDATE_STEPS: usize = 420;
 const UPDATE_STEPS: usize = 120;
 // const UPDATE_STEPS: usize = 10;
 const STEP_DELTA: f32 = 0.01;
 const UPDATE_STEP: f32 = UPDATE_STEPS as f32 * STEP_DELTA;
-const MAX_STEP: usize = (UPDATE_STEP * 1_000_000.0) as usize;
+// const MAX_STEP: usize = (UPDATE_STEP * 5_00_000.0) as usize;
+const MAX_STEP: usize = 50_000;
 const COLOR_STEP: usize = (20.0 / UPDATE_STEP) as usize;
-const DIVE_DIFF: f32 = 0.9;
+const DIVE_DIFF: f32 = 0.7;
 
 #[derive(Clone, Debug)]
 pub struct DoublePendulum {
-    id:        usize,
+    pub id:    usize,
     childs:    Vec<usize>,
     parent_id: usize,
 
@@ -41,11 +43,12 @@ pub struct DoublePendulum {
     pub dt2:    f32,  //
     pub d2t1:   f32,
     pub d2t2:   f32,
-    scale:      f32,
+    pub scale:  f32,
 
     pub stopped: bool,
     pub steps:   usize,
     pub prev:    f32,
+    color:       Option<Color>,
 }
 
 impl DoublePendulum {
@@ -67,6 +70,7 @@ impl DoublePendulum {
             stopped:   false,
             steps:     0,
             prev:      f32::INFINITY,
+            color:     None,
         };
         this
     }
@@ -183,39 +187,44 @@ impl DoublePendulum {
         self.prev = self.theta2;
     }
 
-    fn color(&self) -> (f32, f32, f32) {
-        if self.steps == MAX_STEP {
-            let cr = prisma::Rgb::new(1.0, 1.0, 1.0);
-            return (cr.red(), cr.green(), cr.blue());
+    fn color(&mut self) -> Color {
+        if let Some(c) = self.color {
+            return c
         }
-        // let p = ((self.steps / 100 % 360) as f32) / 1_000.0 * PHI;
+        if self.steps == MAX_STEP {
+            let cr = prisma::Rgb::new(0.7, 0.7, 0.7);
+            self.color = Some((cr.red(), cr.green(), cr.blue()).into());
+            return self.color.unwrap()
+        }
         let p = ((self.steps / COLOR_STEP % 360) as f32 / 360.0) * PHI;
-        // println!("{} {:.6}", self.steps, p);
         let c = prisma::Hsv::new(Rad::new(p), 1.0, 1.0);
-        // let p = 0.9;
-        // let clow = prisma::Hsv::new(Rad::new(0.0), 1.0, 1.0);
-        // let chigh = prisma::Hsv::new(Rad::new(PHI), 1.0, 1.0);
-        // let c = clow.lerp(&chigh, p);
         let cr: prisma::Rgb<f32> = c.into();
-        // println!("{:?} => {:?} => {:?}", c, p, cr);
+        self.color = Some((cr.red(), cr.green(), cr.blue()).into());
+        self.color.unwrap()
+    }
+
+    fn pcolor(&self) -> (f32, f32, f32) {
+        let mut p = self.theta2.abs();
+        while p > PHI {
+            p -= PHI
+        }
+        let cr: prisma::Rgb<f32> = prisma::Hsv::new(Rad::new(p), 0.5, 1.0).into();
         (cr.red(), cr.green(), cr.blue())
     }
 
-    pub fn draw(&self, ctx: &mut Context) -> GameResult<()> {
+    pub fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         // if self.l1 * self.scale < 1.0 {
         //     return Ok(());
         // }
         let mb = &mut graphics::MeshBuilder::new();
-        let color = self.color();
-        let (r, g, b) = color;
-        let color = color.into();
-        let pcolor = [1.0 - r, 1.0 - g, 1.0 - b, 1.0].into();
         if self.stopped {
+            let color = self.color();
             let w = self.scale * (self.l1 + self.l2);
             let draw_mode = DrawMode::fill();
             mb.rectangle(draw_mode, Rect::new(self.p.x - w, self.p.y - w, 2.0 * w, 2.0 * w), color)?;
         }
         else {
+            let pcolor = self.pcolor().into();
             let mut p1 = self.p.clone();
             let (ts1, tc1) = self.theta1.sin_cos();
             p1.x += self.scale * ts1 * self.l1;
@@ -243,10 +252,11 @@ impl DoublePendulum {
     }
 
     fn adjacent(&self, other: &DoublePendulum) -> bool {
-        let epsilon = MIN_DIVE_PIXEL / 4.0;
+        let epsilon = 0.1;
         let w2 = self.width() + other.width();
         let dx = (self.p.x - other.p.x).abs();
         let dy = (self.p.y - other.p.y).abs();
+        // println!("{} {} {}", dx, dy, w2);
         (dx <= w2 && (dy - w2).abs() < epsilon) || (dy <= w2 && (dx - w2).abs() < epsilon)
     }
 
@@ -259,9 +269,9 @@ impl DoublePendulum {
 pub struct PendulumFamily {
     width:    f32,
     pub ps:   HashMap<usize, Rc<RefCell<DoublePendulum>>>,
-    queue:    VecDeque<Rc<RefCell<DoublePendulum>>>,
     pub done: HashMap<usize, Rc<RefCell<DoublePendulum>>>,
     tree:     KdTree<f32, usize, 2>,
+    pub dive: HashSet<usize>,
     counter:  usize,
     iter:     usize,
 }
@@ -275,11 +285,11 @@ impl PendulumFamily {
         PendulumFamily {
             width:   width,
             ps:      HashMap::new(),
-            queue:   VecDeque::new(),
             done:    HashMap::new(),
             tree:    KdTree::new(),
             counter: 0,
             iter:    0,
+            dive:    HashSet::new(),
         }
     }
 
@@ -299,6 +309,9 @@ impl PendulumFamily {
             return false;
         }
         let p = p.unwrap().borrow();
+        if id == 5 {
+            println!("{:?}", p.childs);
+        }
         for c in &p.childs {
             if let Some(c) = self.done.get(&c) {
                 if !c.borrow().stopped {
@@ -328,42 +341,109 @@ impl PendulumFamily {
         None
     }
 
-    pub fn dive(&self, p: &mut DoublePendulum) -> Vec<DoublePendulum> {
+    pub fn find_all(&self, x: f32, y: f32) -> Option<Rc<RefCell<DoublePendulum>>> {
+        let mut res = Vec::new();
+        for (_, pref) in self.done.iter().chain(self.ps.iter()) {
+            let p = pref.borrow();
+            if p.point_inside(x, y) {
+                res.push(pref.clone())
+            }
+            // if p.borrow_mut().point_inside(x, y) {
+            //     return Some(p.clone());
+            // }
+        }
+        match res.len() {
+            0 => None,
+            1 => Some(res[0].clone()),
+            2 => {
+                println!("found {:?}", res);
+                Some(res[0].clone())
+            }
+            _ => {
+                println!("found {:?}", res.iter().map(|p| p.borrow().stopped).collect::<Vec<_>>());
+                Some(res[0].clone())
+            }
+        }
+    }
+
+    pub fn dive(&mut self, p: &mut DoublePendulum) -> Vec<DoublePendulum> {
         /* if adjacent stopped pendulums has large diff with p - split p and adjacent into smaller pixels
          */
         assert!(p.stopped);
-        if p.width() < MIN_DIVE_PIXEL {
-            return vec![];
-        }
-        let nearest = self.tree.nearest(&[p.p.x, p.p.y], 10, &squared_euclidean).unwrap();
+        // if p.width() < MIN_DIVE_PIXEL {
+        //     return vec![];
+        // }
+        let nearest = self.tree.nearest(&[p.p.x, p.p.y], self.done.len(), &squared_euclidean).unwrap();
         let mut res = Vec::new();
         let mut skip = HashSet::new();
         skip.insert(p.id);
-        for id in nearest {
-            if skip.contains(id.1) {
+        for id in &nearest {
+            if skip.contains(id.1) || self.dive.contains(id.1) {
                 continue;
             }
             if let Some(mut n) = self.done.get(id.1) {
                 let mut n = n.borrow_mut();
-                if !n.stopped || n.width() < MIN_DIVE_PIXEL {
-                    continue;
-                }
                 let (asteps, bsteps) = (p.steps.min(n.steps), p.steps.max(n.steps));
                 let psteps = asteps as f32 / bsteps as f32;
-                if psteps < DIVE_DIFF && p.adjacent(&n) {
+                if (psteps < DIVE_DIFF || p.steps == MAX_STEP || n.steps == MAX_STEP) && p.adjacent(&n) {
                     // println!("{} / {} = {:.3}", asteps, bsteps, psteps);
                     res.extend(n.split(self.width, MIN_DIVE_PIXEL));
                     skip.insert(n.id);
-                    println!("split {} {}", self.iter, n.id);
-                    println!("split {}", n.id);
+                    self.dive.insert(n.id);
+                    // println!("split {} {}", n.id, self.iter);
+                    // println!("split {}", n.id);
                 }
             }
         }
         if res.len() > 0 {
             res.extend(p.split(self.width, MIN_DIVE_PIXEL));
-            // println!("split {}", p.id);
+            self.dive.insert(p.id);
         }
+        // else {
+        //     println!("{}: nothing to split {:?}", p.id, nearest);
+        //     for id in &nearest {
+        //         if skip.contains(id.1) || self.dive.contains(id.1) {
+        //             println!("skip {}: skip list", id.1);
+        //             continue;
+        //         }
+        //         if let Some(mut n) = self.done.get(id.1) {
+        //             let mut n = n.borrow_mut();
+        //             let (asteps, bsteps) = (p.steps.min(n.steps), p.steps.max(n.steps));
+        //             let psteps = asteps as f32 / bsteps as f32;
+        //             if psteps < DIVE_DIFF {
+        //                 println!("skip {}: pdiff = {:.6}", n.id, psteps);
+        //             }
+        //             if ! p.adjacent(&n) {
+        //                 println!("skip {}: {} {} far from {} {}", n.id, n.p, n.width(), p.p, p.width());
+        //             }
+
+        //             // if (psteps < DIVE_DIFF || p.steps == MAX_STEP || n.steps == MAX_STEP) && p.adjacent(&n) {
+        //             //     // println!("{} / {} = {:.3}", asteps, bsteps, psteps);
+        //             //     res.extend(n.split(self.width, MIN_DIVE_PIXEL));
+        //             //     skip.insert(n.id);
+        //             //     self.dive.insert(n.id);
+        //             //     // println!("split {} {}", n.id, self.iter);
+        //             //     // println!("split {}", n.id);
+        //             // }
+        //         }
+        //     }
+        // }
         res
+    }
+
+    pub fn dive_all(&mut self, ps: &mut Vec<Rc<RefCell<DoublePendulum>>>) -> HashMap<usize, Rc<RefCell<DoublePendulum>>> {
+        let mut next = HashMap::new();
+        for p in ps {
+            let mut p = p.borrow_mut();
+            for mut d in self.dive(&mut p) {
+                self.counter += 1;
+                d.id = self.counter;
+                d.parent_id = p.id;
+                next.insert(d.id, Rc::new(RefCell::new(d)));
+            }
+        }
+        // println!("[{}] {:?}", self.iter, self.dive);
+        next
     }
 
     pub fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
@@ -376,61 +456,59 @@ impl PendulumFamily {
             if p.stopped {
                 self.done.insert(p.id, pref.clone());
                 self.tree.add(&p.p.to_array(), p.id).unwrap();
-                // for mut n in p.split(self.width, MIN_PIXEL) {
-                //     self.counter += 1;
-                //     n.id = self.counter;
-                //     n.parent_id = p.id;
-                //     next.insert(n.id, Rc::new(RefCell::new(n)));
-                // }
                 stopped.push(pref.clone());
+                for mut n in p.split(self.width, MIN_PIXEL) {
+                    self.counter += 1;
+                    n.id = self.counter;
+                    n.parent_id = p.id;
+                    next.insert(n.id, Rc::new(RefCell::new(n)));
+                }
             }
             else {
                 next.insert(p.id, pref.clone());
             }
         }
+        if next.len() == 0 && self.done.len() == 1 {
+            let mut p = self.done.values().next().unwrap().clone();
+            let mut p = p.borrow_mut();
+            for mut n in p.split(self.width, MIN_PIXEL) {
+                self.counter += 1;
+                n.id = self.counter;
+                n.parent_id = p.id;
+                next.insert(n.id, Rc::new(RefCell::new(n)));
+            }
+        }
         for p in &stopped {
             let p = p.borrow();
             if self.can_remove(p.parent_id) {
+                // println!("remove {}", p.parent_id);
+                let parent = self.done[&p.parent_id].clone();
                 self.done.remove(&p.parent_id);
-                self.tree.remove(&p.p.to_array(), &p.id).unwrap();
+                self.tree.remove(&parent.borrow().p.to_array(), &p.parent_id).unwrap();
             }
         }
-        // for p in &mut stopped {
-        //     let mut p = p.borrow_mut();
-        //     for mut d in self.dive(&mut p) {
-        //         self.counter += 1;
-        //         d.id = self.counter;
-        //         d.parent_id = p.id;
-        //         if next.len() > 500000 {
-        //             self.queue.push_back(Rc::new(RefCell::new(d)))
-        //         }
-        //         else {
-        //             next.insert(d.id, Rc::new(RefCell::new(d)));
-        //         }
-        //     }
-        // }
-        while next.len() < 500 && self.queue.len() > 0 {
-            let n = self.queue.pop_front().unwrap();
-            next.insert(n.borrow().id, n.clone());
-        }
-        if self.ps.len() > 0 && (self.ps.len() + self.queue.len()) % 100 == 0 {
-            println!("active: {}, queued: {}, done: {}", self.ps.len(), self.queue.len(), self.done.len());
+        next.extend(self.dive_all(&mut stopped));
+        if self.ps.len() > 0 && self.iter % 31 == 0 {
+            println!("[{}] active: {}, done: {}", self.iter, self.ps.len(), self.done.len());
         }
         self.ps = next;
         Ok(())
     }
 
     pub fn draw(&self, ctx: &mut Context) -> GameResult<()> {
-        for p in self.done.values() {
-            p.borrow().draw(ctx)?
+        let mut done = self.done.values().cloned().collect::<Vec<_>>();
+        // done.sort_by(|a, b| a.borrow().id.partial_cmp(&b.borrow().id).unwrap());
+        done.sort_by(|a, b| b.borrow().scale.partial_cmp(&a.borrow().scale).unwrap());
+        // for p in self.done.values() {
+        for p in done {
+            p.borrow_mut().draw(ctx)?
         }
         for p in self.ps.values() {
-            p.borrow().draw(ctx)?
+            p.borrow_mut().draw(ctx)?
         }
         Ok(())
     }
 }
-
 
 mod test {
     use glam::vec2;
@@ -443,9 +521,13 @@ mod test {
         let p1 = DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0), WIDTH, 0.5);
         let p2 = DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5);
         assert!(p1.adjacent(&p2));
+        assert!(p2.adjacent(&p1));
         let mut p3 = p2.clone();
         p3.p.y += 1.0;
         assert!(!p1.adjacent(&p3));
+        assert!(!p3.adjacent(&p1));
+        let p4 = DoublePendulum::new2(vec2(WIDTH / 4.0 * 3.0, WIDTH / 4.0), WIDTH, 0.5);
+        assert!(p1.adjacent(&p4));
+        assert!(p4.adjacent(&p1));
     }
-
 }
