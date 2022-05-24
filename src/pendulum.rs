@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::f32::consts::PI;
 use std::rc::Rc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use angular_units::{Angle, Deg, Rad};
 use ggez::graphics::{self, Color, DrawMode, FillOptions, Rect};
@@ -16,7 +16,7 @@ use prisma::Lerp;
 const G: f32 = 9.81;
 const PHI: f32 = 2.0 * PI;
 const L1: f32 = 80.0;
-const MIN_PIXEL: f32 = 16.0;
+const MIN_PIXEL: f32 = 4.0;
 const MIN_DIVE_PIXEL: f32 = 4.0;
 // const UPDATE_STEPS: usize = 420;
 const UPDATE_STEPS: usize = 120;
@@ -26,7 +26,7 @@ const UPDATE_STEP: f32 = UPDATE_STEPS as f32 * STEP_DELTA;
 // const MAX_STEP: usize = (UPDATE_STEP * 5_00_000.0) as usize;
 const MAX_STEP: usize = 50_000;
 const COLOR_STEP: usize = (20.0 / UPDATE_STEP) as usize;
-const DIVE_DIFF: f32 = 0.7;
+const DIVE_DIFF: f32 = 0.87;
 
 #[derive(Clone, Debug)]
 pub struct DoublePendulum {
@@ -447,6 +447,7 @@ impl PendulumFamily {
     }
 
     pub fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+        let t = Instant::now();
         self.iter += 1;
         let mut next = HashMap::new();
         let mut stopped = Vec::new();
@@ -457,17 +458,19 @@ impl PendulumFamily {
                 self.done.insert(p.id, pref.clone());
                 self.tree.add(&p.p.to_array(), p.id).unwrap();
                 stopped.push(pref.clone());
-                for mut n in p.split(self.width, MIN_PIXEL) {
-                    self.counter += 1;
-                    n.id = self.counter;
-                    n.parent_id = p.id;
-                    next.insert(n.id, Rc::new(RefCell::new(n)));
-                }
+                // for mut n in p.split(self.width, MIN_PIXEL) {
+                //     self.counter += 1;
+                //     n.id = self.counter;
+                //     n.parent_id = p.id;
+                //     next.insert(n.id, Rc::new(RefCell::new(n)));
+                // }
             }
             else {
                 next.insert(p.id, pref.clone());
             }
         }
+        println!("[{}] upd1 + {:?}", self.iter, t.elapsed());
+        let t = Instant::now();
         if next.len() == 0 && self.done.len() == 1 {
             let mut p = self.done.values().next().unwrap().clone();
             let mut p = p.borrow_mut();
@@ -487,6 +490,7 @@ impl PendulumFamily {
                 self.tree.remove(&parent.borrow().p.to_array(), &p.parent_id).unwrap();
             }
         }
+        println!("[{}] upd2 + {:?}", self.iter, t.elapsed());
         next.extend(self.dive_all(&mut stopped));
         if self.ps.len() > 0 && self.iter % 31 == 0 {
             println!("[{}] active: {}, done: {}", self.iter, self.ps.len(), self.done.len());
@@ -496,6 +500,7 @@ impl PendulumFamily {
     }
 
     pub fn draw(&self, ctx: &mut Context) -> GameResult<()> {
+        let t = Instant::now();
         let mut done = self.done.values().cloned().collect::<Vec<_>>();
         // done.sort_by(|a, b| a.borrow().id.partial_cmp(&b.borrow().id).unwrap());
         done.sort_by(|a, b| b.borrow().scale.partial_cmp(&a.borrow().scale).unwrap());
@@ -503,9 +508,12 @@ impl PendulumFamily {
         for p in done {
             p.borrow_mut().draw(ctx)?
         }
+        println!("[{}] + {:?}", self.iter, t.elapsed());
+        let t = Instant::now();
         for p in self.ps.values() {
             p.borrow_mut().draw(ctx)?
         }
+        println!("[{}] - {:?}", self.iter, t.elapsed());
         Ok(())
     }
 }

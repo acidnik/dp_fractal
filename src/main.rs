@@ -7,6 +7,7 @@ extern crate prisma;
 use std::env::current_dir;
 use std::f32::consts::PI;
 use std::path::Path;
+use std::time::Instant;
 
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
@@ -143,10 +144,13 @@ impl EventHandler for MyGame {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
+        let t = Instant::now();
         graphics::clear(ctx, Color::WHITE);
         self.pendulums.draw(ctx)?;
         self.hint.draw(ctx)?;
-        graphics::present(ctx)
+        let res = graphics::present(ctx);
+        println!("draw: {:?}", t.elapsed());
+        res
     }
 
     fn key_down_event(&mut self, ctx: &mut Context, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
@@ -173,7 +177,7 @@ impl EventHandler for MyGame {
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, button: event::MouseButton, x: f32, y: f32) {
         let p = self.pendulums.find_all(x, y);
         if let Some(pref) = p {
-            let mut stopped = false;
+            let mut stopped;
             {
                 let mut p = pref.borrow();
                 println!(
