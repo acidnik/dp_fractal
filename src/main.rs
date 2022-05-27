@@ -7,18 +7,18 @@ extern crate prisma;
 use std::env::current_dir;
 use std::f32::consts::PI;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
-use ggez::graphics::{self, Color, Font, Text, TextFragment};
-use ggez::{Context, ContextBuilder, GameResult};
+use ggez::graphics::{self, Canvas, Color, Font, Text, TextFragment, Rect};
+use ggez::{timer, Context, ContextBuilder, GameResult};
 use glam::*;
 use pendulum::{DoublePendulum, PendulumFamily};
 
 mod pendulum;
+mod avgspeed;
 
-const PHI: f32 = PI * 2.0;
 const WIDTH: f32 = 2048.0;
 
 fn main() {
@@ -28,7 +28,7 @@ fn main() {
     window_mode.height = WIDTH;
     let mut window_setup = WindowSetup::default();
     window_setup.title = "Double pendulum fractal".into();
-    let mut p = current_dir().unwrap();
+    let p = current_dir().unwrap();
     let (mut ctx, event_loop) = ContextBuilder::new("my_game", "Cool Game Author")
         .window_mode(window_mode)
         .window_setup(window_setup)
@@ -89,15 +89,15 @@ struct MyGame {
 impl MyGame {
     pub fn new(ctx: &mut Context) -> MyGame {
         let mut this = MyGame {
-            pendulums: PendulumFamily::new(WIDTH),
+            pendulums: PendulumFamily::new(ctx, WIDTH),
             state:     GameState::PAUSE,
             hint:      TextHint::new(ctx).unwrap(),
         };
         this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 2.0, WIDTH / 2.0), WIDTH, 1.0));
-        // this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0), WIDTH, 0.5));
+        // this.pendulums.add(DoublePendulum::new2(vec2(768.0, 768.0), WIDTH, 0.25));
         // this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5));
         for _ in 1..=1 {
-            // for _ in 1..100 {
+            // for _ in 1..600 {
             //     this.pendulums.update(ctx).unwrap();
             // }
             // while this.pendulums.ps.len() > 0 {
@@ -137,6 +137,8 @@ impl EventHandler for MyGame {
             return Ok(());
         }
         self.pendulums.update(ctx)?;
+        let img = graphics::screenshot(ctx).unwrap();
+        img.encode(ctx, graphics::ImageFormat::Png, format!("/{:06}.png", self.pendulums.iter)).unwrap();
         if self.pendulums.len() == 0 && self.state == GameState::RUN {
             self.state = GameState::PAUSE;
         }
@@ -145,11 +147,10 @@ impl EventHandler for MyGame {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         let t = Instant::now();
-        graphics::clear(ctx, Color::WHITE);
         self.pendulums.draw(ctx)?;
-        self.hint.draw(ctx)?;
+        // self.hint.draw(ctx)?;
         let res = graphics::present(ctx);
-        println!("draw: {:?}", t.elapsed());
+        // println!("draw: {:?}", t.elapsed());
         res
     }
 
@@ -157,6 +158,9 @@ impl EventHandler for MyGame {
         match keycode {
             KeyCode::Q => {
                 event::quit(ctx);
+            }
+            KeyCode::Equals => {
+                self.pendulums.update_steps *= 2;
             }
             KeyCode::Space => {
                 if self.state == GameState::RUN {
@@ -177,9 +181,9 @@ impl EventHandler for MyGame {
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, button: event::MouseButton, x: f32, y: f32) {
         let p = self.pendulums.find_all(x, y);
         if let Some(pref) = p {
-            let mut stopped;
+            let stopped;
             {
-                let mut p = pref.borrow();
+                let p = pref.borrow();
                 println!(
                     "[{}] ({}, {}) sc={} st={} {} dive={} run={}",
                     p.id,
@@ -195,10 +199,10 @@ impl EventHandler for MyGame {
             }
 
             if stopped && button == event::MouseButton::Left {
-                let mut ps = vec![pref.clone()];
-                let next = self.pendulums.dive_all(&mut ps);
-                self.pendulums.ps.extend(next);
-                self.state = GameState::RUN;
+                // let mut ps = vec![pref.clone()];
+                // let next = self.pendulums.dive_all(&mut ps);
+                // self.pendulums.ps.extend(next);
+                // self.state = GameState::RUN;
             }
         }
     }

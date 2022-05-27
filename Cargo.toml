@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 angular-units = "0.2.4"
+crossbeam = "0.8.1"
 ggez = "0.7"
 glam = "0.20.5"
 kiddo = "0.2.4"
