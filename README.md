@@ -1,3 +1,4 @@
+![](img/003073.png)
 # Explanation
 Coordinates of the pixel on the screen sets the initial state of the double pendulum.
 X coordinate is the angle of first arm, mapped to 0 .. TAU (where TAU=2*PI) 
