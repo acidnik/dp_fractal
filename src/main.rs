@@ -137,8 +137,8 @@ impl EventHandler for MyGame {
             return Ok(());
         }
         self.pendulums.update(ctx)?;
-        let img = graphics::screenshot(ctx).unwrap();
-        img.encode(ctx, graphics::ImageFormat::Png, format!("/{:06}.png", self.pendulums.iter)).unwrap();
+        // let img = graphics::screenshot(ctx).unwrap();
+        // img.encode(ctx, graphics::ImageFormat::Png, format!("/{:06}.png", self.pendulums.iter)).unwrap();
         if self.pendulums.len() == 0 && self.state == GameState::RUN {
             self.state = GameState::PAUSE;
         }

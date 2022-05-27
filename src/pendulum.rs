@@ -21,7 +21,7 @@ use crate::avgspeed::RollingAverage;
 const G: f32 = 9.81;
 const L1: f32 = 80.0;
 const MIN_PIXEL: f32 = 4.0;
-const MIN_DIVE_PIXEL: f32 = 4.0;
+const MIN_DIVE_PIXEL: f32 = 8.0;
 const STEP_DELTA: f32 = 0.01;
 const COLOR_STEP: f32 = 15.0;
 const DIVE_DIFF: f32 = 0.92;
@@ -78,8 +78,11 @@ impl DoublePendulum {
     pub fn new2(p: Vec2, width: f32, scale: f32) -> Self {
         // p.x .. w => 0 .. TAU
         // p.y .. w => 0 .. PI
-        let theta1 = p.x / width * TAU;
-        let theta2 = p.y / width * PI;
+        //let theta1 = p.x / width * TAU;
+        //let theta2 = p.y / width * PI;
+        // (480, 1056)
+        let theta1 = 1.46 + p.x / width * 0.1;
+        let theta2 = 1.61 + p.y / width * 0.1;
         let mut this = DoublePendulum::new(p, theta1, theta2, scale);
         this.l1 = width / 4.0;
         this.l2 = width / 4.0;
@@ -497,13 +500,17 @@ impl PendulumFamily {
         
         self.update_steps = 10 + ((self.iter as f32 / 550.0).exp() / 20.0).exp() as usize;
         
-        next.extend(self.dive_all(&mut stopped));
+        //next.extend(self.dive_all(&mut stopped));
+        let dive = self.dive_all(&mut stopped);
+        next.extend(dive.clone());
         
         if self.ps.len() > 0 {
             println!(
-                "[{}] active: {}, done: {}, avg: {}, steps: {}",
+                "[{}] +{}, -{}: active: {}, done: {}, avg: {}, steps: {}",
                 self.iter,
-                self.ps.len(),
+                dive.len(),
+                stopped.len(),
+                next.len(),
                 self.done.len(),
                 self.avg.get(),
                 self.update_steps
