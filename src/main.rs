@@ -5,7 +5,7 @@ extern crate kiddo;
 extern crate prisma;
 
 use std::env::current_dir;
-use std::f32::consts::PI;
+use std::f64::consts::{TAU, PI};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -14,18 +14,18 @@ use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::graphics::{self, Canvas, Color, Font, Text, TextFragment, Rect};
 use ggez::{timer, Context, ContextBuilder, GameResult};
 use glam::*;
-use pendulum::{DoublePendulum, PendulumFamily};
+use pendulum::{DoublePendulum, PendulumFamily, Config};
 
 mod pendulum;
 mod avgspeed;
 
-const WIDTH: f32 = 2048.0;
+const WIDTH: f64 = 2048.0;
 
 fn main() {
     // Make a Context.
     let mut window_mode = WindowMode::default();
-    window_mode.width = WIDTH;
-    window_mode.height = WIDTH;
+    window_mode.width = WIDTH as f32;
+    window_mode.height = WIDTH as f32;
     let mut window_setup = WindowSetup::default();
     window_setup.title = "Double pendulum fractal".into();
     let p = current_dir().unwrap();
@@ -88,18 +88,71 @@ struct MyGame {
 
 impl MyGame {
     pub fn new(ctx: &mut Context) -> MyGame {
+        let config = Config {
+            xmin: 0.0,
+            xmax: TAU,
+            ymin: 0.0,
+            ymax: PI,
+            color_step: 100.0,
+            dive_diff: 0.92,
+            max_step: 10_000,
+            min_pixel: 4.0,
+            color_mod: 6000,
+            speed_a: 550.0,
+            speed_b: 20.0,
+        };
+        // the eye
+        let config = Config {
+            xmin: 1.24,
+            xmax: 0.405,
+            ymin: 1.45,
+            ymax: 0.385,
+            color_step: 100.0,
+            dive_diff: 0.97,
+            max_step: 1_000_000,
+            min_pixel: 8.0,
+            color_mod: 6_000,
+            speed_a: 550.0,
+            speed_b: 20.0,
+        };
+        // eye + more context
+        let config = Config {
+            xmin: 0.66,
+            xmax: 1.0,
+            ymin: 1.41,
+            ymax: 0.4,
+            color_step: 500.0,
+            dive_diff: 0.999,
+            max_step: 300_000,
+            min_pixel: 4.0,
+            color_mod: 30700,
+            speed_a: 620.0,
+            speed_b: 20.0,
+        };
+        // let config = Config {
+        //     xmin: 5.09,
+        //     xmax: 0.25,
+        //     ymin: 1.6,
+        //     ymax: 0.25,
+        //     color_step: 2000.0,
+        //     dive_diff: 0.994,
+        //     max_step: 10_000,
+        //     min_pixel: 4.0,
+        //     color_mod: 100_000,
+        // };
+        
         let mut this = MyGame {
-            pendulums: PendulumFamily::new(ctx, WIDTH),
+            pendulums: PendulumFamily::new(ctx, config.clone(), WIDTH),
             state:     GameState::PAUSE,
             hint:      TextHint::new(ctx).unwrap(),
         };
-        this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 2.0, WIDTH / 2.0), WIDTH, 1.0));
+        this.pendulums.add(DoublePendulum::new2(dvec2(WIDTH / 2.0, WIDTH / 2.0), WIDTH, 1.0, &config));
         // this.pendulums.add(DoublePendulum::new2(vec2(768.0, 768.0), WIDTH, 0.25));
         // this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5));
         for _ in 1..=1 {
-            // for _ in 1..600 {
-            //     this.pendulums.update(ctx).unwrap();
-            // }
+            for _ in 1..3050 {
+                this.pendulums.update(ctx).unwrap();
+            }
             // while this.pendulums.ps.len() > 0 {
             //     this.pendulums.update(ctx).unwrap();
             // }
@@ -120,7 +173,7 @@ impl MyGame {
 impl MyGame {
     fn update_hint(&mut self) {
         let (x, y) = (self.hint.pos.x, self.hint.pos.y);
-        if let Some(ref p) = self.pendulums.find(x, y) {
+        if let Some(ref p) = self.pendulums.find(x as f64, y as f64) {
             // self.hint.pos = vec2(x, y);
             self.hint.text = Some(format!("{}", p.borrow().steps / 1_000))
         }
@@ -179,7 +232,7 @@ impl EventHandler for MyGame {
     }
 
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, button: event::MouseButton, x: f32, y: f32) {
-        let p = self.pendulums.find_all(x, y);
+        let p = self.pendulums.find_all(x as f64, y as f64);
         if let Some(pref) = p {
             let stopped;
             {
