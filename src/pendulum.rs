@@ -12,31 +12,34 @@ use crossbeam::channel::bounded;
 use ggez::graphics::{self, get_window_color_format, Canvas, Color, DrawMode, FillOptions, Rect};
 use ggez::*;
 use glam::*;
-use kiddo::distance::squared_euclidean;
-use kiddo::KdTree;
 use prisma::Lerp;
 
 use crate::avgspeed::RollingAverage;
 
 const G: f64 = 9.81;
 const L1: f64 = 80.0;
+
+// dt for physics
 const STEP_DELTA: f64 = 0.01;
-// const MIN_PIXEL: f32 = 4.0;
-// const MIN_DIVE_PIXEL: f32 = 8.0;
-// const COLOR_STEP: f32 = 15.0;
-// const DIVE_DIFF: f32 = 0.92;
 
 #[derive(Clone)]
 pub struct Config {
+    // the min angle of first arm
     pub xmin:       f64,
+    // misnomer. this is the with of the area in terms of width
     pub xmax:       f64,
     pub ymin:       f64,
     pub ymax:       f64,
+    // just play with this values for better color
     pub color_step: f64,
     pub color_mod:  usize,
+    // if two adjacent pendums differ more than this - split them both. 0..1
     pub dive_diff:  f64,
+    // max step before pendulum is expired. divided by scale
     pub max_step:   usize,
+    //
     pub min_pixel:  f64,
+    // adjust the speed of phys iter per frame
     pub speed_a:    f64,
     pub speed_b:    f64,
 }
@@ -47,16 +50,17 @@ pub struct DoublePendulum {
     childs:    Vec<usize>,
     parent_id: usize,
 
-    pub p:      DVec2, // fixed point
-    pub theta1: f64,   // angle of first arm: 0 .. TAU
-    pub theta2: f64,   // angle of snd arm: 0 .. TAU
-    pub l1:     f64,   // len of first arm
-    pub l2:     f64,   // len of snd arm
-    pub dt1:    f64,   //
-    pub dt2:    f64,   //
-    pub d2t1:   f64,
-    pub d2t2:   f64,
-    pub scale:  f64,
+    pub p:         DVec2, // fixed point
+    pub theta1:    f64,   // angle of first arm: 0 .. TAU
+    pub theta2:    f64,   // angle of snd arm: 0 .. TAU
+    pub l1:        f64,   // len of first arm
+    pub l2:        f64,   // len of snd arm
+    pub dt1:       f64,   //
+    pub dt2:       f64,   //
+    pub d2t1:      f64,
+    pub d2t2:      f64,
+    pub scale:     f64,
+    pub neighbors: Vec<usize>,
 
     pub stopped: bool,
     pub steps:   usize,
@@ -81,6 +85,7 @@ impl DoublePendulum {
             d2t1:      0.0,
             d2t2:      0.0,
             scale:     scale,
+            neighbors: Vec::new(),
             stopped:   false,
             steps:     0,
             prev:      f64::INFINITY,
@@ -164,7 +169,8 @@ impl DoublePendulum {
         if self.stopped {
             return;
         }
-        if self.steps >= 8000 + (max_step as f64 / self.scale) as usize {
+        // if self.steps >= 8000 + (max_step as f64 / self.scale) as usize {
+        if self.steps >= max_step {
             self.stopped = true;
             self.expired = true;
             return;
@@ -211,7 +217,6 @@ impl DoublePendulum {
 
         self.prev = self.theta2;
     }
-
     fn update_color(&mut self, color_step: usize, color_mod: usize) {
         if self.expired {
             let cr = prisma::Rgb::new(0.7, 0.7, 0.7);
@@ -239,23 +244,17 @@ impl DoublePendulum {
     }
 
     #[inline(always)]
-    fn rect(&self, x1: f64, y1: f64, w: f64, h: f64) -> Rect {
-        Rect::new(x1 as f32, y1 as f32, w as f32, h as f32)
+    fn rect(&self) -> Rect {
+        let w = (self.scale * (self.l1 + self.l2)) as f32;
+        Rect::new(self.p.x as f32 - w, self.p.y as f32 - w as f32, 2.0 * w, 2.0 * w)
     }
 
     pub fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        // if self.l1 * self.scale < 1.0 {
-        //     return Ok(());
-        // }
-        // if self.scale <= 0.015625 && !self.stopped {
-        //     return Ok(())
-        // }
-        let w = self.scale * (self.l1 + self.l2);
         let draw_mode = DrawMode::fill();
         let color = self.color();
         let mb = &mut graphics::MeshBuilder::new();
         if self.stopped {
-            mb.rectangle(draw_mode, self.rect(self.p.x - w, self.p.y - w, 2.0 * w, 2.0 * w), color)?;
+            mb.rectangle(draw_mode, self.rect(), color)?;
         }
         else {
             let pcolor = self.pcolor();
@@ -269,7 +268,7 @@ impl DoublePendulum {
             p2.x += self.scale * ts2 * self.l2;
             p2.y += self.scale * tc2 * self.l2;
 
-            mb.rectangle(draw_mode, self.rect(self.p.x - w, self.p.y - w, 2.0 * w, 2.0 * w), color)?;
+            mb.rectangle(draw_mode, self.rect(), color)?;
             mb.line(&[self.p.as_vec2(), p1.as_vec2(), p2.as_vec2()], 3.0, pcolor)?;
         }
         let mesh = mb.build(ctx)?;
@@ -342,7 +341,6 @@ pub struct PendulumFamily {
     width:    f64,
     pub ps:   HashMap<usize, Rc<RefCell<DoublePendulum>>>,
     pub done: HashMap<usize, Rc<RefCell<DoublePendulum>>>,
-    tree:     KdTree<f64, usize, 2>,
     pub dive: HashSet<usize>,
     to_draw:  VecDeque<Rc<RefCell<DoublePendulum>>>,
     counter:  usize,
@@ -363,7 +361,6 @@ impl PendulumFamily {
             width:   width,
             ps:      HashMap::new(),
             done:    HashMap::new(),
-            tree:    KdTree::new(),
             counter: 0,
             iter:    0,
             dive:    HashSet::new(),
@@ -408,22 +405,6 @@ impl PendulumFamily {
         self.ps.len()
     }
 
-    #[allow(dead_code)]
-    pub fn find(&self, x: f64, y: f64) -> Option<Rc<RefCell<DoublePendulum>>> {
-        let node = self.tree.nearest(&[x, y], 1, &squared_euclidean).ok()?;
-        if node.len() == 0 {
-            return None;
-        }
-        let res = self.done.get(node[0].1);
-        if res.is_none() {
-            return None;
-        }
-        if let Some(res) = res {
-            return Some(res.clone());
-        }
-        None
-    }
-
     pub fn find_all(&self, x: f64, y: f64) -> Option<Rc<RefCell<DoublePendulum>>> {
         let mut res = Vec::new();
         for (_, pref) in self.done.iter().chain(self.ps.iter()) {
@@ -440,77 +421,116 @@ impl PendulumFamily {
                 .partial_cmp(&(b.borrow().scale, b.borrow().stopped))
                 .unwrap()
         });
+        println!("found at {:?}", (x, y));
+        for r in &res {
+            let r = r.borrow();
+            println!(
+                "#{} <= {} {:?} {}       {}",
+                r.id,
+                r.parent_id,
+                r.rect(),
+                r.stopped,
+                r.steps,
+            );
+            // break;
+        }
         match res.len() {
             0 => None,
-            1 => Some(res[0].clone()),
-            2 => {
-                println!("found {:?}", res);
-                Some(res[0].clone())
-            }
-            _ => {
-                println!("found {:?}", res.iter().map(|p| p.borrow().stopped).collect::<Vec<_>>());
-                Some(res[0].clone())
-            }
+            _ => Some(res[0].clone()),
         }
     }
 
-    pub fn dive(&mut self, p: &mut DoublePendulum) -> Vec<DoublePendulum> {
+    fn update_neighbors(&mut self, parent_id: usize, childs: &mut Vec<DoublePendulum>) {
+        let mut nbs = Vec::new(); // ids of childs; all four new childs are neighbors to each other
+        let mut p = {
+            // parent must be stopped
+            self.done[&parent_id].borrow().clone()
+        };
+        for c in &mut *childs {
+            self.counter += 1;
+            c.id = self.counter;
+            c.parent_id = p.id;
+            nbs.push(c.id);
+            for nid in &p.neighbors {
+                if *nid == parent_id {
+                    continue;
+                }
+                // if any of ngs of p is adjacent to new pendulum - add it to its ngs
+                // and update p's ngs
+                let pn = self.done.get_mut(nid).or(self.ps.get_mut(nid));
+                if let Some(pn) = pn {
+                    let mut pn = pn.borrow_mut();
+                    if c.adjacent(&pn) {
+                        c.neighbors.push(pn.id);
+                        pn.neighbors.push(c.id);
+                    }
+                }
+            }
+        }
+        for c in childs {
+            c.neighbors.extend(nbs.clone());
+        }
+    }
+
+    pub fn dive(&mut self, p: &mut DoublePendulum) -> Vec<(usize, Vec<DoublePendulum>)> {
         /* if adjacent stopped pendulums has large diff with p - split p and adjacent into smaller pixels
          */
         assert!(p.stopped);
-        // if p.width() < MIN_DIVE_PIXEL {
-        //     return vec![];
-        // }
-        let nearest = self.tree.nearest(&[p.p.x, p.p.y], 100, &squared_euclidean).unwrap();
-        let mut res = Vec::new();
+        let nearest = &p.neighbors;
         let mut skip = HashSet::new();
         skip.insert(p.id);
+
         // if neighbor is different, but already in split list - split only current
         let mut add_current = false;
-        for id in &nearest {
-            if skip.contains(id.1) {
+
+        let mut to_update = Vec::new();
+        for id in nearest {
+            if skip.contains(id) {
                 continue;
             }
-            if let Some(n) = self.done.get(id.1) {
-                let mut n = n.borrow_mut();
+            if let Some(nref) = self.done.get(id) {
+                let mut n = nref.borrow_mut();
                 let (asteps, bsteps) = (p.steps.min(n.steps), p.steps.max(n.steps));
                 let psteps = asteps as f64 / bsteps as f64;
                 if (psteps < self.config.dive_diff || p.expired || n.expired) && p.adjacent(&n) {
-                    if p.expired && n.expired && n.width() < 16.0 {
+                    if p.expired && n.expired && n.width()  < 16.0 {
+                        // do not split expired too small
                         continue;
                     }
                     // println!("{} / {} = {:.3}", asteps, bsteps, psteps);
                     if self.dive.contains(&n.id) {
+                        // if n is already in split list - split only current
                         add_current = true;
                         continue;
                     }
-                    res.extend(n.split(self.width, self.config.min_pixel, &self.config));
+                    let mut childs = n.split(self.width, self.config.min_pixel, &self.config);
+                    to_update.push((n.id, childs));
                     skip.insert(n.id);
                     self.dive.insert(n.id);
-                    // println!("split {} {}", n.id, self.iter);
-                    // println!("split {}", n.id);
                 }
             }
         }
-        if res.len() > 0 || add_current {
-            res.extend(p.split(self.width, self.config.min_pixel, &self.config));
+        if !self.dive.contains(&p.id) && !(p.expired && p.width() < 16.0) && (to_update.len() > 0 || add_current) {
+            let mut childs = p.split(self.width, self.config.min_pixel, &self.config);
             self.dive.insert(p.id);
+            to_update.push((p.id, childs));
         }
-        res
+        to_update
     }
 
     pub fn dive_all(&mut self, ps: &mut Vec<Rc<RefCell<DoublePendulum>>>) -> HashMap<usize, Rc<RefCell<DoublePendulum>>> {
         let mut next = HashMap::new();
-        for p in ps {
+        let mut to_update = Vec::new();
+        for p in &mut *ps {
             let mut p = p.borrow_mut();
-            for mut d in self.dive(&mut p) {
-                self.counter += 1;
-                d.id = self.counter;
-                d.parent_id = p.id;
-                next.insert(d.id, Rc::new(RefCell::new(d)));
+            to_update.extend(self.dive(&mut p));
+        }
+        for (pid, mut childs) in to_update {
+            self.update_neighbors(pid, &mut childs);
+            for c in childs {
+                next.insert(c.id, Rc::new(RefCell::new(c)));
             }
         }
-        // println!("[{}] {:?}", self.iter, self.dive);
         next
     }
 
@@ -524,16 +544,18 @@ impl PendulumFamily {
         let (res_sender, res_receiver) = bounded::<DoublePendulum>(self.len());
         let upd_steps = self.update_steps;
         let max_steps = self.config.max_step;
-        let workers = (1..12).map(|_| {
-            let receiver = receiver.clone();
-            let res_sender = res_sender.clone();
-            thread::spawn(move || {
-                while let Ok(mut p) = receiver.recv() {
-                    p.update(upd_steps, max_steps).unwrap();
-                    res_sender.send(p).unwrap();
-                }
+        let workers = (1..12)
+            .map(|_| {
+                let receiver = receiver.clone();
+                let res_sender = res_sender.clone();
+                thread::spawn(move || {
+                    while let Ok(mut p) = receiver.recv() {
+                        p.update(upd_steps, max_steps).unwrap();
+                        res_sender.send(p).unwrap();
+                    }
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         for pref in &mut self.ps.values_mut() {
             sender.send(pref.borrow().clone()).unwrap();
@@ -561,19 +583,11 @@ impl PendulumFamily {
                 stopped.push(pref.clone());
 
                 self.done.insert(p.id, pref.clone());
-                self.tree.add(&p.p.to_array(), p.id).unwrap();
 
                 p.update_color(color_step, self.config.color_mod);
                 self.to_draw.push_back(pref.clone());
 
                 self.avg.add(p.steps as u32);
-
-                // for mut n in p.split(self.width, MIN_PIXEL) {
-                //     self.counter += 1;
-                //     n.id = self.counter;
-                //     n.parent_id = p.id;
-                //     next.insert(n.id, Rc::new(RefCell::new(n)));
-                // }
             }
             else {
                 next.insert(p.id, pref.clone());
@@ -582,33 +596,33 @@ impl PendulumFamily {
         println!("phys {:?} {:?} stopped={}", t_phys, t.elapsed(), stopped.len());
         let t = Instant::now();
         if (next.len() == 0 && self.done.len() == 1) || (next.len() == 1 && self.done.len() == 0 && self.iter >= 1) {
-            // special case: only for the first pendulum
-            let p = self.done.values().next().unwrap_or(next.values().next().unwrap()).clone();
-            let mut p = p.borrow_mut();
-            if !p.stopped {
-                p.stopped = true;
-                p.update_color(color_step, self.update_steps);
-            }
-            for mut n in p.split(self.width, self.config.min_pixel, &self.config) {
-                self.counter += 1;
-                n.id = self.counter;
-                n.parent_id = p.id;
+            let pref = self.done.values().next().unwrap_or(next.values().next().unwrap()).clone();
+            let (mut childs, p_id) = {
+                // special case: only for the first pendulum
+                let mut p = pref.borrow_mut();
+                if !p.stopped {
+                    p.stopped = true;
+                    p.update_color(color_step, self.update_steps);
+                }
+                let mut childs = p.split(self.width, self.config.min_pixel, &self.config);
+                (childs, p.id)
+            };
+            self.done.insert(p_id, pref.clone());
+            self.update_neighbors(p_id, &mut childs);
+            for n in childs {
                 next.insert(n.id, Rc::new(RefCell::new(n)));
             }
         }
-        
+
         let t = Instant::now();
-        let mut removed = 0;
-        for p in &stopped {
-            let p = p.borrow();
-            if self.can_remove(p.parent_id) {
-                let parent = self.done[&p.parent_id].clone();
-                self.done.remove(&p.parent_id);
-                self.tree.remove(&parent.borrow().p.to_array(), &p.parent_id).unwrap();
-                removed += 1;
-            }
-        }
-        // (iter / a).exp() / b: bigger b => longer low values at start
+        // for p in &stopped {
+        //     let p = p.borrow();
+        //     if self.can_remove(p.parent_id) {
+        //         let parent = self.done[&p.parent_id].clone();
+        //         self.done.remove(&p.parent_id);
+        //         removed += 1;
+        //     }
+        // }
 
         self.update_steps = 10 + ((self.iter as f64 / self.config.speed_a).exp() / self.config.speed_b).exp() as usize;
 
@@ -619,21 +633,40 @@ impl PendulumFamily {
 
         if self.ps.len() > 0 {
             println!(
-                "[{}] {:?} {:?}/a +{}, -{}: active: {}, done: {} (-{}), avg: {}, steps: {}",
+                "[{}] {:?} +{}, -{}: active: {}, done: {}, avg: {}, steps: {}",
                 self.iter,
                 self.t.elapsed(),
-                self.t.elapsed() / self.ps.len() as u32,
                 new_cnt,
                 stopped.len(),
                 next.len(),
                 self.done.len(),
-                removed,
                 self.avg.get(),
                 self.update_steps
             );
         }
         self.ps = next;
         self.t = Instant::now();
+
+        // if self.ps.len() == 0 {
+        //     for p in self.done.values() {
+        //         let p = p.borrow();
+        //         if p.width() > self.config.min_pixel / 2.0 || p.expired {
+        //             continue;
+        //         }
+
+        //         for n in p.neighbors.iter().map(|n| &self.done[n]) {
+        //             let n = n.borrow();
+        //             if n.width() > self.config.min_pixel / 2.0 || p.expired {
+        //                 continue
+        //             }
+        //             let (asteps, bsteps) = (p.steps.min(n.steps), p.steps.max(n.steps));
+        //             let psteps = asteps as f64 / bsteps as f64;
+        //             if 0.7 < psteps && psteps < 0.99 {
+        //                 println!("({}, {}),", asteps, bsteps);
+        //             }
+        //         }
+        //     }
+        // }
         Ok(())
     }
 
@@ -641,51 +674,81 @@ impl PendulumFamily {
         let t = Instant::now();
         graphics::set_canvas(ctx, Some(&self.canvas));
         let draw_len = self.to_draw.len();
-        let mut drawn = 0;
         while let Some(p) = self.to_draw.pop_front() {
-            // println!("draw {}", p.borrow().id);
             p.borrow_mut().draw(ctx)?;
-            drawn += 1;
-            if drawn >= 10_000 {
-                break
-            }
         }
         graphics::set_canvas(ctx, None);
         graphics::draw(ctx, &self.canvas, (vec2(0.0, 0.0), (1.0, 1.0, 1.0, 1.0).into()))?;
-        // println!("[{}] + {:?}", self.iter, t.elapsed());
-        let t = Instant::now();
+        let mut p_drawn = 0;
         for p in self.ps.values() {
-            // p.borrow_mut().draw(ctx)?
+            let mut p = p.borrow_mut();
+            if p.width() > 2.0 * self.config.min_pixel || true {
+                p.draw(ctx)?;
+                p_drawn += 1;
+            }
         }
-        if drawn > 0 {
-            println!("{} / {} - {:?}", drawn, draw_len, t.elapsed());
+        if draw_len > 0 {
+            println!("draw: {} / {} - {:?}", draw_len, p_drawn, t.elapsed());
         }
         Ok(())
     }
 }
 
 mod test {
-    use glam::vec2;
+    use glam::*;
+    use tap::Tap;
 
-    use super::{DoublePendulum, L1};
+    use crate::pendulum::PendulumFamily;
+
+    use super::{Config, DoublePendulum, L1};
 
     #[test]
     fn test_adjacent() {
-        // let WIDTH = 2048.0;
-        // let p1 = DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0), WIDTH, 0.5);
-        // let p2 = DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5);
-        // assert!(p1.adjacent(&p2));
-        // assert!(p2.adjacent(&p1));
-        // let mut p3 = p2.clone();
-        // p3.p.y += 1.0;
-        // assert!(!p1.adjacent(&p3));
-        // assert!(!p3.adjacent(&p1));
-        // let p4 = DoublePendulum::new2(vec2(WIDTH / 4.0 * 3.0, WIDTH / 4.0), WIDTH, 0.5);
-        // assert!(p1.adjacent(&p4));
-        // assert!(p4.adjacent(&p1));
+        let config = Config {
+            xmin:       0.0,
+            xmax:       3.0,
+            ymin:       0.0,
+            ymax:       3.0,
+            color_step: 100.0,
+            dive_diff:  0.92,
+            max_step:   10_000,
+            min_pixel:  16.0,
+            color_mod:  6000,
+            speed_a:    550.0,
+            speed_b:    20.0,
+        };
+        let WIDTH = 2048.0;
+        let p1 = DoublePendulum::new2(dvec2(WIDTH / 4.0, WIDTH / 4.0), WIDTH, 0.5, &config).tap_mut(|p| p.id = 1);
+        let p2 = DoublePendulum::new2(dvec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5, &config).tap_mut(|p| p.id = 2);
+        assert!(p1.adjacent(&p2));
+        assert!(p2.adjacent(&p1));
+        let mut p3 = p2.clone();
+        p3.p.y += 1.0;
+        assert!(!p1.adjacent(&p3));
+        assert!(!p3.adjacent(&p1));
+        let p4 = DoublePendulum::new2(dvec2(WIDTH / 4.0 * 3.0, WIDTH / 4.0), WIDTH, 0.5, &config).tap_mut(|p| p.id = 3);
+        assert!(p1.adjacent(&p4));
+        assert!(p4.adjacent(&p1));
     }
 }
 
 /*
-ffmpeg -r 1/5 -i %06d.png -c:v libx264 -vf fps=25 -pix_fmt yuv420p dpfrac.mp4
+ffmpeg -i %06d.png -c:v libx264 -vf fps=25 -pix_fmt yuv420p dpfrac.mp4
+
+17656824, 14566440, 12232153, 10474365, 8978968, 10559327, 7660001, 6192263, 5547534, 5030964, 5791348, 5626429, 5513460, 5414841, 5353111, 5328068, 5372594, 5669123, 3741880, 3326335, 3299858, 3035284, 3222022, 3618125, 6004937, 6539385, 6737906, 8667145, 7566728, 8026945, 7517135, 9292684, 6974263, 7299401, 6740840, 7285574, 6817602, 31238, 20449, 20568, 20780, 10708, 10359, 10324, 10344, 10409, 10542, 10841,
+
+
+# [(a,b), ...]: f(b) - f(a) = const
+
+def make_f(a, b, c, d):
+    def f(x):
+        return np.log(a*x) * np.log(b*np.log(c*x)) * d
+    return f
+
+196_858 785_448
+785_448 1_376_003
+1_376_003 19_85_157
+2_599_679
+
+
 */

@@ -1,23 +1,26 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_mut, unused_variables, unreachable_code))]
 
 extern crate angular_units;
-extern crate kiddo;
 extern crate prisma;
+extern crate tap;
 
 use std::env::current_dir;
 use std::f64::consts::{TAU, PI};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use ggez::conf::{WindowMode, WindowSetup};
+use ggez::conf::{WindowMode, WindowSetup, ModuleConf};
 use ggez::event::{self, EventHandler, KeyCode, KeyMods};
 use ggez::graphics::{self, Canvas, Color, Font, Text, TextFragment, Rect};
 use ggez::{timer, Context, ContextBuilder, GameResult};
 use glam::*;
+use p2::{PendulumFamily2};
 use pendulum::{DoublePendulum, PendulumFamily, Config};
+use tap::Tap;
 
 mod pendulum;
 mod avgspeed;
+mod p2;
 
 const WIDTH: f64 = 2048.0;
 
@@ -26,12 +29,16 @@ fn main() {
     let mut window_mode = WindowMode::default();
     window_mode.width = WIDTH as f32;
     window_mode.height = WIDTH as f32;
-    let mut window_setup = WindowSetup::default();
-    window_setup.title = "Double pendulum fractal".into();
+    
+    let window_setup = WindowSetup::default().tap_mut(|x| x.title="Double pendulum fractal".into());
+
+    let module_conf = ModuleConf::default().audio(false);
+
     let p = current_dir().unwrap();
     let (mut ctx, event_loop) = ContextBuilder::new("my_game", "Cool Game Author")
         .window_mode(window_mode)
         .window_setup(window_setup)
+        .modules(module_conf)
         .add_resource_path(&p)
         .build()
         .expect("aieee, could not create ggez context!");
@@ -88,44 +95,58 @@ struct MyGame {
 
 impl MyGame {
     pub fn new(ctx: &mut Context) -> MyGame {
+        // let config = Config {
+        //     xmin: 0.0,
+        //     xmax: TAU,
+        //     ymin: 0.0,
+        //     ymax: PI,
+        //     color_step: 100.0,
+        //     dive_diff: 0.990,
+        //     max_step: 50_000,
+        //     min_pixel: 4.0,
+        //     color_mod: 6000,
+        //     speed_a: 550.0,
+        //     speed_b: 20.0,
+        // };
         let config = Config {
             xmin: 0.0,
             xmax: TAU,
             ymin: 0.0,
             ymax: PI,
             color_step: 100.0,
-            dive_diff: 0.92,
-            max_step: 10_000,
+            dive_diff: 0.99,
+            max_step: 460_000,
             min_pixel: 4.0,
             color_mod: 6000,
             speed_a: 550.0,
             speed_b: 20.0,
         };
         // the eye
-        let config = Config {
-            xmin: 1.24,
-            xmax: 0.405,
-            ymin: 1.45,
-            ymax: 0.385,
-            color_step: 100.0,
-            dive_diff: 0.97,
-            max_step: 1_000_000,
-            min_pixel: 8.0,
-            color_mod: 6_000,
-            speed_a: 550.0,
-            speed_b: 20.0,
-        };
+        // let config = Config {
+        //     xmin: 1.24,
+        //     xmax: 0.405,
+        //     ymin: 1.45,
+        //     ymax: 0.385,
+        //     color_step: 100.0,
+        //     dive_diff: 0.97,
+        //     max_step: 1_000_000,
+        //     min_pixel: 8.0,
+        //     color_mod: 6_000,
+        //     speed_a: 550.0,
+        //     speed_b: 20.0,
+        // };
         // eye + more context
         let config = Config {
-            xmin: 0.66,
-            xmax: 1.0,
-            ymin: 1.41,
-            ymax: 0.4,
-            color_step: 500.0,
+            xmin: 0.56,
+            xmax: 1.1,
+            ymin: 1.01,
+            ymax: 0.8,
+            color_step: 250.0,
             dive_diff: 0.999,
-            max_step: 300_000,
+            max_step: 3_000_000,
             min_pixel: 4.0,
-            color_mod: 30700,
+            // color_mod: 30700,
+            color_mod: 1200700,
             speed_a: 620.0,
             speed_b: 20.0,
         };
@@ -140,26 +161,29 @@ impl MyGame {
         //     min_pixel: 4.0,
         //     color_mod: 100_000,
         // };
+
+        // let config = p2::Config {
+        //     xmin: 0.0,
+        //     xmax: TAU,
+        //     ymin: 0.0,
+        //     ymax: PI,
+        //     min_pixel: 8.0,
+        //     update_steps: 10,
+        // };
         
         let mut this = MyGame {
             pendulums: PendulumFamily::new(ctx, config.clone(), WIDTH),
+            // pendulums: PendulumFamily2::new(ctx, config.clone(), WIDTH),
             state:     GameState::PAUSE,
+            // state: GameState::RUN,
             hint:      TextHint::new(ctx).unwrap(),
         };
+        //this.pendulums.init();
         this.pendulums.add(DoublePendulum::new2(dvec2(WIDTH / 2.0, WIDTH / 2.0), WIDTH, 1.0, &config));
         // this.pendulums.add(DoublePendulum::new2(vec2(768.0, 768.0), WIDTH, 0.25));
         // this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5));
-        for _ in 1..=1 {
-            for _ in 1..3050 {
-                this.pendulums.update(ctx).unwrap();
-            }
-            // while this.pendulums.ps.len() > 0 {
-            //     this.pendulums.update(ctx).unwrap();
-            // }
-            // let mut ps = this.pendulums.done.values().cloned().collect::<Vec<_>>();
-            // let next = this.pendulums.dive_all(&mut ps);
-            // this.pendulums.ps = next;
-            // println!("{:?}", this.pendulums.ps.keys());
+        for _ in 1..2300 {
+            this.pendulums.update(ctx).unwrap();
         }
         // for p in this.pendulums.ps.values() {
         //     let p = p.borrow();
@@ -171,16 +195,6 @@ impl MyGame {
 }
 
 impl MyGame {
-    fn update_hint(&mut self) {
-        let (x, y) = (self.hint.pos.x, self.hint.pos.y);
-        if let Some(ref p) = self.pendulums.find(x as f64, y as f64) {
-            // self.hint.pos = vec2(x, y);
-            self.hint.text = Some(format!("{}", p.borrow().steps / 1_000))
-        }
-        else {
-            self.hint.text = None
-        }
-    }
 }
 
 impl EventHandler for MyGame {
@@ -193,6 +207,7 @@ impl EventHandler for MyGame {
         // let img = graphics::screenshot(ctx).unwrap();
         // img.encode(ctx, graphics::ImageFormat::Png, format!("/{:06}.png", self.pendulums.iter)).unwrap();
         if self.pendulums.len() == 0 && self.state == GameState::RUN {
+            println!("===END===");
             self.state = GameState::PAUSE;
         }
         Ok(())
@@ -217,9 +232,11 @@ impl EventHandler for MyGame {
             }
             KeyCode::Space => {
                 if self.state == GameState::RUN {
+                    println!("===PAUSE===");
                     self.state = GameState::PAUSE;
                 }
                 else if self.state == GameState::PAUSE {
+                    println!("===RUN===");
                     self.state = GameState::RUN;
                 }
             }
@@ -238,7 +255,7 @@ impl EventHandler for MyGame {
             {
                 let p = pref.borrow();
                 println!(
-                    "[{}] ({}, {}) sc={} st={} {} dive={} run={}",
+                    "[{}] ({}, {}) sc={} st={} {} dive={} run={} ngs={:?}",
                     p.id,
                     p.p.x,
                     p.p.y,
@@ -246,7 +263,8 @@ impl EventHandler for MyGame {
                     p.stopped,
                     p.steps,
                     self.pendulums.dive.contains(&p.id),
-                    self.pendulums.ps.contains_key(&p.id)
+                    self.pendulums.ps.contains_key(&p.id),
+                    p.neighbors,
                 );
                 stopped = p.stopped;
             }
