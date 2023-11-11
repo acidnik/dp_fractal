@@ -104,8 +104,8 @@ impl DoublePendulum {
         let theta1 = config.xmin + p.x / width * config.xmax;
         let theta2 = config.ymin + p.y / width * config.ymax;
         let mut this = DoublePendulum::new(p, theta1, theta2, scale);
-        this.l1 = width / 4.0;
-        this.l2 = width / 4.0;
+        this.l1 = width / 4.0 * 1.0;
+        this.l2 = width / 4.0 * 1.0;
         this
     }
 

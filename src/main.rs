@@ -114,7 +114,7 @@ impl MyGame {
             ymin: 0.0,
             ymax: PI,
             color_step: 100.0,
-            dive_diff: 0.99,
+            dive_diff: 0.82,
             max_step: 460_000,
             min_pixel: 4.0,
             color_mod: 6000,
@@ -136,20 +136,20 @@ impl MyGame {
         //     speed_b: 20.0,
         // };
         // eye + more context
-        let config = Config {
-            xmin: 0.56,
-            xmax: 1.1,
-            ymin: 1.01,
-            ymax: 0.8,
-            color_step: 250.0,
-            dive_diff: 0.999,
-            max_step: 3_000_000,
-            min_pixel: 4.0,
-            // color_mod: 30700,
-            color_mod: 1200700,
-            speed_a: 620.0,
-            speed_b: 20.0,
-        };
+        // let config = Config {
+        //     xmin: 0.56,
+        //     xmax: 1.1,
+        //     ymin: 1.01,
+        //     ymax: 0.8,
+        //     color_step: 250.0,
+        //     dive_diff: 0.999,
+        //     max_step: 3_000_000,
+        //     min_pixel: 4.0,
+        //     // color_mod: 30700,
+        //     color_mod: 1200700,
+        //     speed_a: 620.0,
+        //     speed_b: 20.0,
+        // };
         // let config = Config {
         //     xmin: 5.09,
         //     xmax: 0.25,
@@ -182,9 +182,9 @@ impl MyGame {
         this.pendulums.add(DoublePendulum::new2(dvec2(WIDTH / 2.0, WIDTH / 2.0), WIDTH, 1.0, &config));
         // this.pendulums.add(DoublePendulum::new2(vec2(768.0, 768.0), WIDTH, 0.25));
         // this.pendulums.add(DoublePendulum::new2(vec2(WIDTH / 4.0, WIDTH / 4.0 * 3.0), WIDTH, 0.5));
-        for _ in 1..2300 {
-            this.pendulums.update(ctx).unwrap();
-        }
+        // for _ in 1..2300 {
+        //     this.pendulums.update(ctx).unwrap();
+        // }
         // for p in this.pendulums.ps.values() {
         //     let p = p.borrow();
         //     println!("{} {}", p.id, p.stopped);
